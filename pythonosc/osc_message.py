@@ -33,13 +33,20 @@ class OscMessage(object):
       if type_tag.startswith(','):
         type_tag = type_tag[1:]
 
+      params = []
+      param_stack = [params]
       # Parse each parameter given its type.
       for param in type_tag:
+        have_val = True
         if param == "i":  # Integer.
           val, index = osc_types.get_int(self._dgram, index)
         elif param == "f":  # Float.
           val, index = osc_types.get_float(self._dgram, index)
+        elif param == "d":  # Double.
+          val, index = osc_types.get_double(self._dgram, index)
         elif param == "s":  # String.
+          val, index = osc_types.get_string(self._dgram, index)
+        elif param == "S":  # Symbol (represented as string).
           val, index = osc_types.get_string(self._dgram, index)
         elif param == "b":  # Blob.
           val, index = osc_types.get_blob(self._dgram, index)
@@ -49,11 +56,29 @@ class OscMessage(object):
           val = True
         elif param == "F": # False.
           val = False
+        elif param == "N": # None.
+          val = None
+        elif param == "I": # Infinitum.
+          val = float('inf')
+        elif param == "[": # Array start.
+          a = []
+          param_stack[-1].append(a)
+          param_stack.append(a)
+          have_val = False
+        elif param == "]":
+          if len(param_stack) < 2:
+            raise ParseError('Unmatched brackets in type tag: ' + type_tag)
+          param_stack.pop()
+          have_val = False
         # TODO: Support more exotic types as described in the specification.
         else:
           logging.warning('Unhandled parameter type: {0}'.format(param))
           continue
-        self._parameters.append(val)
+        if have_val:
+          param_stack[-1].append(val)
+      if len(param_stack) != 1:
+        raise ParseError('Unmatched brackets in type tag: ' + type_tag)
+      self._parameters = params
     except osc_types.ParseError as pe:
       raise ParseError('Found incorrect datagram, ignoring it', pe)
 

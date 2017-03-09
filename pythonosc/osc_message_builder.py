@@ -12,15 +12,20 @@ class OscMessageBuilder(object):
   """Builds arbitrary OscMessage instances."""
 
   ARG_TYPE_FLOAT = "f"
+  ARG_TYPE_DOUBLE = "d"
   ARG_TYPE_INT = "i"
   ARG_TYPE_STRING = "s"
   ARG_TYPE_BLOB = "b"
   ARG_TYPE_RGBA = "r"
   ARG_TYPE_TRUE = "T"
   ARG_TYPE_FALSE = "F"
+  ARG_TYPE_NONE = "N"
+
+  ARG_TYPE_ARRAY_START = "["
+  ARG_TYPE_ARRAY_STOP = "]"
 
   _SUPPORTED_ARG_TYPES = (
-      ARG_TYPE_FLOAT, ARG_TYPE_INT, ARG_TYPE_BLOB, ARG_TYPE_STRING, ARG_TYPE_RGBA, ARG_TYPE_TRUE, ARG_TYPE_FALSE)
+      ARG_TYPE_FLOAT, ARG_TYPE_DOUBLE, ARG_TYPE_INT, ARG_TYPE_BLOB, ARG_TYPE_STRING, ARG_TYPE_RGBA, ARG_TYPE_TRUE, ARG_TYPE_FALSE, ARG_TYPE_NONE)
 
   def __init__(self, address=None):
     """Initialize a new builder for a message.
@@ -46,6 +51,16 @@ class OscMessageBuilder(object):
     """Returns the (type, value) arguments list of this message."""
     return self._args
 
+  def valid_type(self, arg_type):
+    if arg_type in self._SUPPORTED_ARG_TYPES:
+      return True
+    elif isinstance(arg_type, list):
+      for a in arg_type:
+        if not self.valid_type(a):
+          return False
+      return True
+    return False
+
   def add_arg(self, arg_value, arg_type=None):
     """Add a typed argument to this message.
 
@@ -56,25 +71,46 @@ class OscMessageBuilder(object):
     Raises:
       - ValueError: if the type is not supported.
     """
-    if arg_type and arg_type not in self._SUPPORTED_ARG_TYPES:
+    if arg_type and not self.valid_type(arg_type):
       raise ValueError(
           'arg_type must be one of {}'.format(self._SUPPORTED_ARG_TYPES))
     if not arg_type:
-      if isinstance(arg_value, str):
-        arg_type = self.ARG_TYPE_STRING
-      elif isinstance(arg_value, bytes):
-        arg_type = self.ARG_TYPE_BLOB
-      elif isinstance(arg_value, int):
-        arg_type = self.ARG_TYPE_INT
-      elif isinstance(arg_value, float):
-        arg_type = self.ARG_TYPE_FLOAT
-      elif arg_value == True:
-        arg_type = self.ARG_TYPE_TRUE
-      elif arg_value == False:
-        arg_type = self.ARG_TYPE_FALSE
-      else:
-        raise ValueError('Infered arg_value type is not supported')
-    self._args.append((arg_type, arg_value))
+      arg_type = self.get_arg_type(arg_value)
+    if isinstance(arg_type, list):
+      self._args.append((self.ARG_TYPE_ARRAY_START, None))
+      for v, t in zip(arg_value, arg_type):
+        self.add_arg(v, t)
+      self._args.append((self.ARG_TYPE_ARRAY_STOP, None))
+    else:
+      self._args.append((arg_type, arg_value))
+
+  def get_arg_type(self, arg_value):
+    """Guess the type of an arg.
+
+    Args:
+      - arg_value: The corresponding value for the argument.
+    Raises:
+      - ValueError: if the type is not supported.
+    """
+    if isinstance(arg_value, str):
+      arg_type = self.ARG_TYPE_STRING
+    elif isinstance(arg_value, bytes):
+      arg_type = self.ARG_TYPE_BLOB
+    elif isinstance(arg_value, int):
+      arg_type = self.ARG_TYPE_INT
+    elif isinstance(arg_value, float):
+      arg_type = self.ARG_TYPE_FLOAT
+    elif isinstance(arg_value, list):
+      arg_type = [self.get_arg_type(v) for v in arg_value]
+    elif arg_value == True:
+      arg_type = self.ARG_TYPE_TRUE
+    elif arg_value == False:
+      arg_type = self.ARG_TYPE_FALSE
+    elif arg_value is None:
+      arg_type = self.ARG_TYPE_NONE
+    else:
+      raise ValueError('Infered arg_value type is not supported')
+    return arg_type
 
   def build(self):
     """Builds an OscMessage from the current state of this builder.
@@ -110,7 +146,11 @@ class OscMessageBuilder(object):
           dgram += osc_types.write_blob(value)
         elif arg_type == self.ARG_TYPE_RGBA:
           dgram += osc_types.write_rgba(value)
-        elif arg_type == self.ARG_TYPE_TRUE or arg_type == self.ARG_TYPE_FALSE:
+        elif (arg_type == self.ARG_TYPE_TRUE or
+              arg_type == self.ARG_TYPE_FALSE or
+              arg_type == self.ARG_TYPE_NONE or
+              arg_type == self.ARG_TYPE_ARRAY_START or
+              arg_type == self.ARG_TYPE_ARRAY_STOP):
           continue
         else:
           raise BuildError('Incorrect parameter type found {}'.format(

@@ -20,6 +20,7 @@ IMMEDIATELY = 0
 # Datagram length in bytes for types that have a fixed size.
 _INT_DGRAM_LEN = 4
 _FLOAT_DGRAM_LEN = 4
+_DOUBLE_DGRAM_LEN = 8
 _DATE_DGRAM_LEN = _INT_DGRAM_LEN * 2
 # Strings and blob dgram length is always a multiple of 4 bytes.
 _STRING_DGRAM_PAD = 4
@@ -154,6 +155,32 @@ def get_float(dgram, start_index):
         struct.unpack('>f',
                       dgram[start_index:start_index + _FLOAT_DGRAM_LEN])[0],
         start_index + _FLOAT_DGRAM_LEN)
+  except (struct.error, TypeError) as e:
+    raise ParseError('Could not parse datagram %s' % e)
+
+def get_double(dgram, start_index):
+  """Get a 64-bit big-endian IEEE 754 double precision floating point number from the datagram.
+
+  Args:
+    dgram: A datagram packet.
+    start_index: An index where the double starts in the datagram.
+
+  Returns:
+    A tuple containing the double and the new end index.
+
+  Raises:
+    ParseError if the datagram could not be parsed.
+  """
+  try:
+    if len(dgram[start_index:]) < _DOUBLE_DGRAM_LEN:
+      # Noticed that Reaktor doesn't send the last bunch of \x00 needed to make
+      # the float representation complete in some cases, thus we pad here to
+      # account for that.
+      dgram = dgram + b'\x00' * (_DOUBLE_DGRAM_LEN - len(dgram[start_index:]))
+    return (
+        struct.unpack('>d',
+                      dgram[start_index:start_index + _DOUBLE_DGRAM_LEN])[0],
+        start_index + _DOUBLE_DGRAM_LEN)
   except (struct.error, TypeError) as e:
     raise ParseError('Could not parse datagram %s' % e)
 
